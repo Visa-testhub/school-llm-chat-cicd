@@ -1,7 +1,7 @@
 import os
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
@@ -16,7 +16,7 @@ OLLAMA_MODEL = os.environ.get(
 
 @app.get("/")
 def index():
-    return "LLM Chat - Backend is running!"
+    return render_template("index.html", model=OLLAMA_MODEL)
 
 
 @app.post("/api/chat")

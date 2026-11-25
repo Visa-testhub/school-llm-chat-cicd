@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Week 5 - LLM Chat</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <script src="{{ url_for('static', filename='app.js') }}"
+            defer></script>
+</head>
+
+<body data-base="{{ request.script_root }}">
+
+    <main class="chat-container">
+
+        <header>
+            <h1>Self-hosted AI Chat</h1>
+            <p>Week 5 - CI/CD Pipeline</p>
+            <p class="model-info">Model: {{ model }}</p>
+        </header>
+
+        <div id="chat-messages" role="log">
+            <div class="message assistant">
+                Hello! Ask me anything.
+            </div>
+        </div>
+
+        <form id="chat-form">
+            <input id="message-input"
+                   type="text"
+                   placeholder="Type your message..."
+                   maxlength="2000"
+                   autocomplete="off"
+                   aria-label="Chat message"
+                   required>
+
+            <button id="send-button" type="submit">
+                Send
+            </button>
+        </form>
+
+        <p id="status" role="status"></p>
+
+    </main>
+
+</body>
+</html>
