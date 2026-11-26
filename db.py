@@ -3,7 +3,6 @@ import threading
 
 import pymysql
 
-
 DatabaseError = pymysql.MySQLError
 
 _memory: dict[str, list[dict]] = {}
