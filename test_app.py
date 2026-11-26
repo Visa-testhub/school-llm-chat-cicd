@@ -184,3 +184,36 @@ def test_chat_handles_database_failure(client, monkeypatch):
     })
 
     assert response.status_code == 503
+
+def test_health(client, monkeypatch):
+    revision = "a" * 40
+
+    monkeypatch.setattr(
+        app_module, "APP_REVISION", revision
+    )
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True).strip() == revision
+
+
+def test_index_uses_forwarded_prefix(client):
+    response = client.get(
+        "/",
+        headers={"X-Forwarded-Prefix": "/viikko5"}
+    )
+
+    assert response.status_code == 200
+    assert b'href="/viikko5/static/style.css"' in response.data
+    assert b'src="/viikko5/static/app.js"' in response.data
+    assert b'data-base="/viikko5"' in response.data
+
+
+def test_index_without_prefix(client):
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b'href="/static/style.css"' in response.data
+    assert b'src="/static/app.js"' in response.data
+    assert b'data-base=""' in response.data

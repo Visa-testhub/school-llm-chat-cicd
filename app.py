@@ -1,12 +1,20 @@
 import os
 import re
+from pathlib import Path
 
 import requests
 from flask import Flask, jsonify, render_template, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_prefix=1
+)
 
 OLLAMA_URL = os.environ.get(
     "OLLAMA_URL", "http://127.0.0.1:11434"
@@ -27,11 +35,25 @@ MAX_MESSAGE_LEN = 2000
 
 SESSION_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 
+REVISION_FILE = Path(__file__).with_name("REVISION")
+
+# Addition to retain the revision app launched with.
+APP_REVISION = (
+    REVISION_FILE.read_text(encoding="utf-8").strip()
+    if REVISION_FILE.is_file()
+    else "local"
+)
 
 @app.get("/")
 def index():
     return render_template("index.html", model=OLLAMA_MODEL)
 
+@app.get("/health")
+def health():
+    return f"{APP_REVISION}\n", 200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+    }
 
 @app.get("/api/history/<session_id>")
 def history(session_id):
