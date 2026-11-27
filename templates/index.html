@@ -50,6 +50,171 @@
         <p id="status" role="status"></p>
 
     </main>
+    <hr>
+
+    <section id="documentation">
+        <h2>Assignment 5 - Documentation</h2>
+
+        <p>
+            <a href="/viikko5/">Chat</a> |
+            <a href="/viikko5/health">Health</a> |
+            <a href="https://github.com/Visa-testhub/school-llm-chat-cicd">GitHub repository</a>
+        </p>
+
+        <h3>Implementation</h3>
+        <p>
+            Browser -> Nginx -> Unix socket -> Gunicorn/Flask -> Ollama/MySQL.
+            Conversation history is stored in MySQL and identified by a session
+            ID stored in the browser's localStorage.
+            I used the existing MySQL installation instead of MariaDB.
+        </p>
+
+        <h3>CI/CD</h3>
+        <p>
+            Ruff, pytest and Bash syntax checks are configured for pushes and
+            pull requests. Tests use mocked Ollama responses and in-memory storage.
+            Successful pushes to main are deployed using SSH, rsync and deploy.sh.
+            The script installs dependencies, updates the schema and configurations,
+            tests Nginx before reloading and restarts chatapp.service.
+            Deployment is verified by comparing /viikko5/health with the commit SHA.
+        </p>
+
+        <h3>Users and security</h3>
+        <p>
+            The ubuntu user handles deployment. Gunicorn runs as the non-login
+            chatapp user with www-data as its primary group.
+            The MySQL user chatapp has SELECT and INSERT permissions.
+            Application files are owned by ubuntu:ubuntu.
+            Database credentials are stored in /etc/chatapp/chatapp.env.
+            A separate deployment SSH key and known_hosts are stored in GitHub Secrets.
+        </p>
+        <p>
+            Ports 22 and 80 are open to all IPv4 addresses.
+            SSH is open because GitHub runners use changing IP addresses.
+            Password and keyboard-interactive authentication are disabled.
+            Public SSH access increases exposure to attacks and the deployment
+            key has access to a user with sudo privileges.
+            MySQL replication access is restricted to Server B by a separate rule.
+        </p>
+
+        <h3>Nginx</h3>
+        <p>
+            Added include snippets/chatapp.conf to the existing school-site
+            configuration. ProxyFix handles the /viikko5/ prefix.
+            Previous locations were left unchanged.
+        </p>
+
+        <h3>Model and replication</h3>
+        <p>
+            I chose qwen2.5:0.5b because of its small size and CPU usage.
+            No additional swap or server resizing was needed.
+            The chatapp database is not replicated because the existing
+            replication filter only includes viikko2_db.
+        </p>
+
+        <h3>Test results</h3>
+        <ul>
+            <li>Public chat and LLM response: OK</li>
+            <li>History after reload and separate incognito session: OK</li>
+            <li>Ruff and 13 automated tests: OK</li>
+            <li>External connection to port 80: Successful</li>
+            <li>External connection to ports 11434, 8000 and 3306: Failed as intended</li>
+            <li>Week 5 Gunicorn has no TCP listening port.</li>
+            <li>Automatic startup and history persistence after reboot: OK</li>
+            <li>Previous weeks' websites: OK</li>
+            <li>Pull request trigger configured, not separately tested.</li>
+        </ul>
+
+        <h3>Deployment tests</h3>
+        <pre style="overflow-x: auto;">
+            First successful deployment:
+            314386a05c461e27ba07ec45b898f7947b96a720
+
+            Second successful deployment:
+            794826fbe359dbb5955854152bd3f58c5b330786
+
+            Failed commit:
+            c85b84d194c04f3108aa5395b18c2158da093537
+
+            Running commit after failure:
+            794826fbe359dbb5955854152bd3f58c5b330786
+        </pre>
+
+        <p>
+            Changed a test to expect status 418 instead of 200.
+            Deployment was skipped. Reverted the commit and deployment worked again.
+            <a href="https://github.com/Visa-testhub/school-llm-chat-cicd/actions/runs/46029722629">
+                Failed workflow
+            </a>
+        </p>
+
+        <h3>What I learned</h3>
+        <p>
+            Learned how Unix sockets and group permissions can be used
+            to give Nginx access to Gunicorn without giving it access
+            to the database credentials.
+        </p>
+
+        <h3>Command outputs (relevant lines)</h3>
+
+        <pre style="overflow-x: auto;">
+            $ systemctl status chatapp
+            Loaded: loaded (/etc/systemd/system/chatapp.service; enabled; preset: enabled)
+            Active: active (running)
+            Main PID: 1294 (gunicorn)
+
+            $ systemctl show chatapp -p User -p Group
+            User=chatapp
+            Group=www-data
+
+            $ ls -l /opt/chatapp/app
+            -rw-r--r-- 1 ubuntu ubuntu 3532 Nov 27 16:03 app.py
+            -rw-r--r-- 1 ubuntu ubuntu 1871 Nov 27 16:03 db.py
+            drwxr-xr-x 2 ubuntu ubuntu 4096 Nov 27 16:03 static
+            drwxr-xr-x 2 ubuntu ubuntu 4096 Nov 27 16:03 templates
+
+            $ sudo ls -l /etc/chatapp/chatapp.env /run/chatapp/gunicorn.sock
+            -rw-r----- 1 root    chatapp  177 Nov 26 19:47 /etc/chatapp/chatapp.env
+            srwxrwx--- 1 chatapp www-data   0 Nov 27 16:12 /run/chatapp/gunicorn.sock
+
+            mysql&gt; SHOW GRANTS FOR 'chatapp'@'localhost';
+            GRANT USAGE ON *.* TO `chatapp`@`localhost`
+            GRANT SELECT, INSERT ON `chatapp`.* TO `chatapp`@`localhost`
+
+            $ ollama list
+            NAME            ID              SIZE
+            qwen2.5:0.5b    a8b0c5157701    397 MB
+
+            $ ollama ps
+            NAME            ID              SIZE      PROCESSOR    CONTEXT
+            qwen2.5:0.5b    a8b0c5157701    486 MB    100% CPU     4096
+
+            $ free -h
+             total    used     free     shared   buff/cache   available
+            Mem:   7.6Gi    1.5Gi    5.3Gi    4.1Mi    1.0Gi        6.1Gi
+            Swap:  0B       0B       0B
+
+            $ df -h /
+            Filesystem      Size  Used Avail Use% Mounted on
+            /dev/vda1        77G  6.1G   71G   8% /
+
+            $ sudo ss -ltnp
+            LISTEN  0  512   127.0.0.1:43537    0.0.0.0:*  llama-server
+            LISTEN  0  4096  127.0.0.1:11434    0.0.0.0:*  ollama
+            LISTEN  0  2048  127.0.0.1:8000     0.0.0.0:*  gunicorn
+            LISTEN  0  511   0.0.0.0:80         0.0.0.0:*  nginx
+
+            Server B:
+            mysql&gt; SHOW DATABASES LIKE 'chatapp';
+            Empty set (0.11 sec)
+
+            mysql&gt; SHOW REPLICA STATUS\G
+            Replica_IO_Running: Yes
+            Replica_SQL_Running: Yes
+            Replicate_Do_DB: viikko2_db
+            Seconds_Behind_Source: 0
+        </pre>
+    </section>
 
 </body>
 </html>
