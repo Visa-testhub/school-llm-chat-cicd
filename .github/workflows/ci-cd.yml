@@ -34,3 +34,6 @@ jobs:
       - name: Pytest
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: python -m pytest -v
+
+      - name: Validate deployment script
+        run: bash -n scripts/deploy.sh
