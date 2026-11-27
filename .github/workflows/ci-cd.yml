@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-cd-${{ github.event_name }}-${{ github.ref }}
+  queue: max
+  cancel-in-progress: false
+
 jobs:
   test:
     name: Lint and tests
@@ -37,3 +42,102 @@ jobs:
 
       - name: Validate deployment script
         run: bash -n scripts/deploy.sh
+
+
+  deploy:
+    name: Deploy to cPouta
+    needs: test
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    env:
+      HOST: ${{ secrets.CPOUTA_HOST }}
+      SSH_USER: ${{ secrets.CPOUTA_USER }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.CPOUTA_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.CPOUTA_KNOWN_HOSTS }}
+
+        run: |
+          : "${HOST:?Missing CPOUTA_HOST}"
+          : "${SSH_USER:?Missing CPOUTA_USER}"
+          : "${SSH_KEY:?Missing CPOUTA_SSH_KEY}"
+          : "${KNOWN_HOSTS:?Missing CPOUTA_KNOWN_HOSTS}"
+
+          umask 077
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+
+          chmod 600 ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<EOF
+          Host cpouta
+            HostName $HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 3
+          EOF
+
+      - name: Transfer application to cPouta
+        run: |
+          rsync -az --delete --chmod=D755,F644 \
+            --exclude='/.git' \
+            --exclude='/.github' \
+            --exclude='/REVISION' \
+            ./ cpouta:/opt/chatapp/app/
+
+      - name: Execute deployment script
+        run: |
+          ssh cpouta "bash /opt/chatapp/app/scripts/deploy.sh $GITHUB_SHA"
+
+      - name: Verify deployed revision
+        run: |
+          for attempt in $(seq 1 10); do
+            if actual=$(curl -fsS --max-time 10 \
+                "http://$HOST/viikko5/health") \
+                && [[ "$actual" == "$GITHUB_SHA" ]]; then
+
+              echo "SUCCESS: Expected revision is running."
+              echo "Revision: $actual"
+              exit 0
+            fi
+
+            echo "Waiting for correct revision ($attempt/10)"
+            sleep 3
+          done
+
+          echo "ERROR: Deployment verification failed."
+          exit 1
+
+      - name: Verify public website
+        run: |
+          page=$(curl -fsS --max-time 10 "http://$HOST/viikko5/")
+          grep -q 'id="chat-form"' <<< "$page"
+
+          curl -fsS --max-time 10 -o /dev/null \
+            "http://$HOST/viikko5/static/app.js"
+
+          curl -fsS --max-time 10 -o /dev/null \
+            "http://$HOST/viikko5/static/style.css"
+
+          echo "Public website and static files are accessible."
